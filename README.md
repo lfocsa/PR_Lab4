@@ -20,21 +20,59 @@ Implementarea unui client de Mail la trimiterea și preluarea mesajelor din cont
 
 Pentru realizarea trimiterii mesajelor trebuie să deschidem o sesiune și să obținem instanța proprietăților (configurațiilor) de trimitere. Apoi, am creat transportul variabil de tip SMTPTransport pentru conectarea la postul Gmail și trimiterea către receptor a acreditărilor și mesajului cu toate părțile (header, message body, attachments).
 
-![image](https://user-images.githubusercontent.com/43058513/56412552-4475ea80-628d-11e9-8bb3-82e2452db8b7.png)
+```
+    public static void main(String[] args) {
+        Session session = Session.getInstance(GetProperties(), null);
+
+        try {
+            Message msg = MessageInitialize(session);
+            SMTPTransport transport = (SMTPTransport)session.getTransport("smtps");
+            transport.connect("smtp.gmail.com", RetrieveEmails.USERNAME, RetrieveEmails.PASSWORD);
+            transport.sendMessage(msg, msg.getAllRecipients());
+
+            System.out.println("Response: " + transport.getLastServerResponse());
+            transport.close();
+        } catch (MessagingException e) {
+            e.printStackTrace();
+        }
+    }
+```
 
 În funcția MessageInitiliaze am efectuat mesajul MIME (Multi-Purpose Internet Mail Extensions) și inițializat părțile mesajului, unde am adăugat un fișier .txt PR-File.txt și o imagine utm.png. O singură întrebare poate să apară: în cazul în care toate părțile mesajului sunt stocate și trimise? Răspunsul e evident - avem Multipart inițializat in beggining , care este un container care deține mai multe părți din body.
 
 Următoarea funcție în procesul de trimitere a e-mailului este: Attachments (), unde această funcție inițializează o parte abstractă care conține content-ul.
 
-![image](https://user-images.githubusercontent.com/43058513/56413084-f235c900-628e-11e9-8604-590e20d38fdd.png)
+```
+    private static void Attachments(String path, String contentId) throws MessagingException {
+        BodyPart messageBodyPart = new MimeBodyPart();
+        DataSource fds = new FileDataSource(path);
+        messageBodyPart.setDataHandler(new DataHandler(fds));
+        messageBodyPart.setHeader("Content-ID", contentId);
+        messageBodyPart.setFileName(path);
+        multipart.addBodyPart(messageBodyPart);
+    }
+```
 
 Funcția BodyParts() este creată pentru adăugarea content-ului la message.
-
-![image](https://user-images.githubusercontent.com/43058513/56413230-75efb580-628f-11e9-8127-68d7891a9ab7.png)
+```
+    private static void BodyParts(String contentText, String contentType) throws MessagingException {
+        BodyPart messageBodyPart = new MimeBodyPart();
+        messageBodyPart.setContent(contentText, contentType);
+        multipart.addBodyPart(messageBodyPart);
+    }
+ ```
 
 Ultima funcție este pentru proprietăți, care sunt pentru configurație: host , auth...
 
-![image](https://user-images.githubusercontent.com/43058513/56413674-e77c3380-6290-11e9-9d85-f164c9cca966.png)
+```
+    private static Properties GetProperties(){
+        Properties props = System.getProperties();
+        props.put("mail.smtps.host","smtp.gmail.com");
+        props.put("mail.smtps.auth","true");
+        props.put("mail.smtp.EnableSSL.enable","true");
+        return props;
+    }
+```
 
 Pentru extragerea mesajelor am un alt package, care are clasa RetrieveEmiles, care preia mesajele din Inbox Folder din post. Aici, am  Store provider, care se conectează la store prin POP3. Apoi, am primit Inbox Folder și am citit mesajele primite. Message array este creat pentru a stoca mesajele primite și pentru a le parsa în structura corespunzătoare. In continuare am 2 funcții care sunt pentru parsarea informațiilor din e-mail.
 
@@ -42,7 +80,38 @@ Pentru extragerea mesajelor am un alt package, care are clasa RetrieveEmiles, ca
  
  2. **getTextFromMimeMultipart** - parsarea HTML și obținerea textului din body.
  
- ![image](https://user-images.githubusercontent.com/43058513/56415044-290edd80-6295-11e9-80b5-5af2a468b418.png)
+```
+   // get the text of the message in plain mode in cosole.
+    private static String getTextFromMessage(Message message) throws Exception {
+        String result = "";
+        if (message.isMimeType("text/plain")) {
+            result = message.getContent().toString();
+        } else if (message.isMimeType("multipart/*")) {
+            MimeMultipart mimeMultipart = (MimeMultipart) message.getContent();
+            result = getTextFromMimeMultipart(mimeMultipart);
+        }
+        return result;
+    }
+    // parsing the parts of the message (the Bodyparts)
+    private static String getTextFromMimeMultipart(MimeMultipart mimeMultipart) throws Exception {
+        String result = "\n";
+        int count = mimeMultipart.getCount();
+
+        for (int i = 0; i < count; i++) {
+            BodyPart bodyPart = mimeMultipart.getBodyPart(i);
+            if (bodyPart.isMimeType("text/plain")) {
+                result += bodyPart.getContent();
+                break;
+            } else if (bodyPart.isMimeType("text/html")) {
+                String html = (String) bodyPart.getContent();
+                result += Jsoup.parse(html).text();
+            } else if (bodyPart.getContent() instanceof MimeMultipart){
+                result += getTextFromMimeMultipart((MimeMultipart)bodyPart.getContent());
+            }
+        }
+        return result;
+    }
+```
 
 ### Output:
 
